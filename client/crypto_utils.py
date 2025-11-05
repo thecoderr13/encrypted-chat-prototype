@@ -32,6 +32,8 @@ class CryptoUtils:
         
     def load_public_key_from_pem(self, pem_data):
         """Load public key from PEM data"""
+        if isinstance(pem_data, str):
+            pem_data = pem_data.encode()
         self.public_key = serialization.load_pem_public_key(
             pem_data,
             backend=default_backend()
@@ -59,7 +61,8 @@ class CryptoUtils:
         
     def decrypt_with_private_key(self, encrypted_data):
         """Decrypt data with RSA private key"""
-        encrypted_data = base64.b64decode(encrypted_data)
+        if isinstance(encrypted_data, str):
+            encrypted_data = base64.b64decode(encrypted_data)
         
         decrypted = self.private_key.decrypt(
             encrypted_data,
@@ -69,25 +72,33 @@ class CryptoUtils:
                 label=None
             )
         )
-        return decrypted.decode()
+        return decrypted
         
     def encrypt_message(self, message):
         """Encrypt message with symmetric key"""
         if self.fernet is None:
             raise ValueError("Symmetric key not generated")
-        return self.fernet.encrypt(message.encode()).decode()
+        if isinstance(message, str):
+            message = message.encode()
+        encrypted = self.fernet.encrypt(message)
+        return base64.b64encode(encrypted).decode()
         
     def decrypt_message(self, encrypted_message):
         """Decrypt message with symmetric key"""
         if self.fernet is None:
             raise ValueError("Symmetric key not generated")
-        return self.fernet.decrypt(encrypted_message.encode()).decode()
+        if isinstance(encrypted_message, str):
+            encrypted_message = base64.b64decode(encrypted_message)
+        decrypted = self.fernet.decrypt(encrypted_message)
+        return decrypted.decode()
         
     def export_symmetric_key(self):
         """Export symmetric key for sharing"""
         return base64.b64encode(self.symmetric_key).decode()
         
-    def import_symmetric_key(self, key_str):
-        """Import symmetric key from string"""
-        self.symmetric_key = base64.b64decode(key_str)
+    def import_symmetric_key(self, key_data):
+        """Import symmetric key from bytes or string"""
+        if isinstance(key_data, str):
+            key_data = base64.b64decode(key_data)
+        self.symmetric_key = key_data
         self.fernet = Fernet(self.symmetric_key)

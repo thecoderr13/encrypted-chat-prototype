@@ -26,7 +26,7 @@ class ChatClient:
             self.connected = True
             self.username = username
             
-            # Generate and send public key
+            # Generate RSA keys
             self.crypto.generate_rsa_keys()
             public_key_pem = self.crypto.get_public_key_pem().decode()
             
@@ -73,15 +73,28 @@ class ChatClient:
         if not self.connected:
             return
             
+        print(f"Attempting to send message. Fernet available: {self.crypto.fernet is not None}")
+        
         # Encrypt message if symmetric key is available
         if self.crypto.fernet:
-            encrypted_msg = self.crypto.encrypt_message(message)
-            payload = {
-                "type": "message",
-                "message": encrypted_msg,
-                "encrypted": True
-            }
+            try:
+                encrypted_msg = self.crypto.encrypt_message(message)
+                payload = {
+                    "type": "message",
+                    "message": encrypted_msg,
+                    "encrypted": True
+                }
+                print("Message encrypted successfully")
+            except Exception as e:
+                print(f"Encryption error: {e}")
+                # Fallback to unencrypted
+                payload = {
+                    "type": "message", 
+                    "message": message,
+                    "encrypted": False
+                }
         else:
+            print("No symmetric key available, sending unencrypted")
             payload = {
                 "type": "message",
                 "message": message,
@@ -105,7 +118,7 @@ class ChatClient:
                     self._process_message(line)
                     
             except Exception as e:
-                if self.receiving:  # Only print if we're supposed to be receiving
+                if self.receiving:
                     print(f"Receive error: {e}")
                 break
                 
@@ -130,18 +143,30 @@ class ChatClient:
                 if self.gui:
                     self.gui.root.after(0, lambda: self.gui.display_message("System", data["message"]))
                     
-        except json.JSONDecodeError:
-            print(f"Invalid JSON received: {message_data}")
+        except json.JSONDecodeError as e:
+            print(f"Invalid JSON received: {e}")
             
     def _handle_key_exchange(self, data):
         """Handle symmetric key exchange"""
         try:
             encrypted_key = data["encrypted_key"]
-            self.crypto.import_symmetric_key(self.crypto.decrypt_with_private_key(encrypted_key))
+            print(f"Received encrypted key: {encrypted_key[:50]}...")
+            
+            # Decrypt the symmetric key
+            decrypted_key = self.crypto.decrypt_with_private_key(encrypted_key)
+            print(f"Decrypted key length: {len(decrypted_key)}")
+            
+            # Import the symmetric key
+            self.crypto.import_symmetric_key(decrypted_key)
+            print("Symmetric key imported successfully")
+            
             if self.gui:
-                self.gui.root.after(0, lambda: self.gui.display_message("System", "Secure connection established!"))
+                self.gui.root.after(0, lambda: self.gui.display_message("System", "Secure connection established! You can now send encrypted messages."))
+                
         except Exception as e:
             print(f"Key exchange error: {e}")
+            import traceback
+            traceback.print_exc()
             
     def _handle_chat_message(self, data):
         """Handle incoming chat message"""
@@ -155,6 +180,7 @@ class ChatClient:
                     decrypted_msg = self.crypto.decrypt_message(message)
                     self.gui.root.after(0, lambda: self.gui.display_message(sender, decrypted_msg))
                 except Exception as e:
+                    print(f"Decryption error: {e}")
                     self.gui.root.after(0, lambda: self.gui.display_message(sender, f"[Decryption failed: {message}]", True))
             else:
                 self.gui.root.after(0, lambda: self.gui.display_message(sender, message, encrypted))
