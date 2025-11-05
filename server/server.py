@@ -25,9 +25,16 @@ class ChatServer:
         self.socket = None
         self.running = False
         self.user_manager = UserManager()
+        
+        # Single password to access the server
+        self.server_password = "secret123"  # Change this to whatever you want
+        
         # Generate a global symmetric key for the chat room
         self.symmetric_key = Fernet.generate_key()
-        print(f"Server symmetric key generated: {self.symmetric_key[:20]}...")
+        print(f"Chat Server Started")
+        print(f"Server Address: {self.host}:{self.port}")
+        print(f"Server Password: {self.server_password}")
+        print("Waiting for connections...")
         
     def start(self):
         """Start the chat server"""
@@ -39,13 +46,10 @@ class ChatServer:
             self.socket.listen(5)
             self.running = True
             
-            print(f"Chat server started on {self.host}:{self.port}")
-            print("Waiting for connections...")
-            
             while self.running:
                 try:
                     client_socket, address = self.socket.accept()
-                    print(f"New connection from {address}")
+                    print(f"Connection attempt from {address}")
                     
                     client_thread = threading.Thread(
                         target=self.handle_client,
@@ -85,15 +89,14 @@ class ChatServer:
                 buffer += data
                 while '\n' in buffer:
                     line, buffer = buffer.split('\n', 1)
-                    if line.strip():  # Ignore empty lines
-                        username = self.process_client_message(line, client_socket, username)
+                    if line.strip():
+                        username = self.process_client_message(line, client_socket, username, address)
                         
         except Exception as e:
             print(f"Client handling error from {address}: {e}")
         finally:
             if username:
                 self.user_manager.remove_user(username)
-                # Notify all users
                 self.user_manager.broadcast_user_list()
                 leave_msg = json.dumps({
                     "type": "system",
@@ -104,14 +107,14 @@ class ChatServer:
                 
             client_socket.close()
             
-    def process_client_message(self, message_data, client_socket, current_username):
+    def process_client_message(self, message_data, client_socket, current_username, address):
         """Process message from client"""
         try:
             data = json.loads(message_data)
             msg_type = data.get("type")
             
             if msg_type == "handshake" and not current_username:
-                return self.handle_handshake(data, client_socket)
+                return self.handle_handshake(data, client_socket, address)
             elif msg_type == "message" and current_username:
                 self.handle_chat_message(data, current_username)
                 
@@ -120,19 +123,33 @@ class ChatServer:
             
         return current_username
         
-    def handle_handshake(self, data, client_socket):
+    def handle_handshake(self, data, client_socket, address):
         """Handle client handshake and registration"""
         username = data["username"]
+        server_password = data["server_password"]  # Password sent by client
         public_key_pem = data["public_key"]
+        
+        # Check if server password is correct
+        if server_password != self.server_password:
+            print(f"Access denied from {address} - wrong password")
+            auth_error = json.dumps({
+                "type": "auth_error",
+                "message": "Invalid server password"
+            })
+            client_socket.sendall((auth_error + '\n').encode())
+            client_socket.close()
+            return None
+        
+        print(f"Access granted to {username} from {address}")
         
         # Add user to manager
         if self.user_manager.add_user(username, client_socket, public_key_pem):
-            print(f"User {username} registered successfully")
+            print(f"User {username} joined the chat")
             
-            # Send welcome message first
+            # Send welcome message
             welcome_msg = json.dumps({
                 "type": "system", 
-                "message": "Welcome to the secure chat! Establishing secure connection..."
+                "message": f"Welcome {username}! Establishing secure connection..."
             })
             client_socket.sendall((welcome_msg + '\n').encode())
             
@@ -143,7 +160,6 @@ class ChatServer:
                     backend=default_backend()
                 )
                 
-                print(f"Encrypting symmetric key for {username}")
                 encrypted_key = public_key.encrypt(
                     self.symmetric_key,
                     padding.OAEP(
@@ -154,7 +170,6 @@ class ChatServer:
                 )
                 
                 encrypted_key_b64 = base64.b64encode(encrypted_key).decode()
-                print(f"Encrypted key length: {len(encrypted_key_b64)}")
                 
                 # Send key exchange message
                 key_exchange_msg = json.dumps({
@@ -162,7 +177,6 @@ class ChatServer:
                     "encrypted_key": encrypted_key_b64
                 })
                 client_socket.sendall((key_exchange_msg + '\n').encode())
-                print(f"Key exchange sent to {username}")
                 
                 # Send connection established message
                 secure_msg = json.dumps({
@@ -173,8 +187,6 @@ class ChatServer:
                 
             except Exception as e:
                 print(f"Key encryption error for {username}: {e}")
-                import traceback
-                traceback.print_exc()
                 error_msg = json.dumps({
                     "type": "system",
                     "message": "Error establishing secure connection"
@@ -206,7 +218,7 @@ class ChatServer:
         message = data["message"]
         encrypted = data.get("encrypted", False)
         
-        print(f"Received message from {username}: {message[:50]}... (encrypted: {encrypted})")
+        print(f"Message from {username}")
         
         # Broadcast message to all OTHER users
         chat_msg = json.dumps({

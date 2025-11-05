@@ -22,10 +22,12 @@ class ChatGUI:
         conn_frame = ttk.LabelFrame(main_frame, text="Connection", padding="5")
         conn_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
         
+        # Username
         ttk.Label(conn_frame, text="Username:").grid(row=0, column=0, sticky=tk.W)
         self.username_entry = ttk.Entry(conn_frame, width=15)
         self.username_entry.grid(row=0, column=1, padx=5)
         
+        # Server
         ttk.Label(conn_frame, text="Server:").grid(row=0, column=2, padx=(20,0))
         self.server_entry = ttk.Entry(conn_frame, width=15)
         self.server_entry.insert(0, "localhost")
@@ -36,9 +38,14 @@ class ChatGUI:
         self.port_entry.insert(0, "8888")
         self.port_entry.grid(row=0, column=5, padx=5)
         
+        # Server Password
+        ttk.Label(conn_frame, text="Server Password:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.password_entry = ttk.Entry(conn_frame, width=15, show="*")
+        self.password_entry.grid(row=1, column=1, padx=5, pady=5)
+        
         self.connect_button = ttk.Button(conn_frame, text="Connect", 
                                        command=self.toggle_connection)
-        self.connect_button.grid(row=0, column=6, padx=10)
+        self.connect_button.grid(row=1, column=6, padx=10, pady=5)
         
         # Chat area
         chat_frame = ttk.LabelFrame(main_frame, text="Chat", padding="5")
@@ -91,9 +98,14 @@ class ChatGUI:
         username = self.username_entry.get().strip()
         server = self.server_entry.get().strip()
         port = self.port_entry.get().strip()
+        password = self.password_entry.get()
         
         if not username:
             messagebox.showerror("Error", "Please enter a username")
+            return
+            
+        if not password:
+            messagebox.showerror("Error", "Please enter server password")
             return
             
         try:
@@ -104,7 +116,7 @@ class ChatGUI:
             
         # Connect in a separate thread
         def connect_thread():
-            if self.client.connect(server, port, username):
+            if self.client.connect(server, port, username, password):
                 self.root.after(0, self.on_connect_success)
             else:
                 self.root.after(0, self.on_connect_failure)
@@ -118,12 +130,13 @@ class ChatGUI:
         self.username_entry.config(state=tk.DISABLED)
         self.server_entry.config(state=tk.DISABLED)
         self.port_entry.config(state=tk.DISABLED)
+        self.password_entry.config(state=tk.DISABLED)
         self.status_var.set("Connected")
         self.root.title(f"Secure Chat - {self.username_entry.get()}")
         
     def on_connect_failure(self):
         """Handle connection failure"""
-        messagebox.showerror("Error", "Failed to connect to server")
+        messagebox.showerror("Error", "Failed to connect to server - check password")
         
     def disconnect_from_server(self):
         """Disconnect from server"""
@@ -133,6 +146,7 @@ class ChatGUI:
         self.username_entry.config(state=tk.NORMAL)
         self.server_entry.config(state=tk.NORMAL)
         self.port_entry.config(state=tk.NORMAL)
+        self.password_entry.config(state=tk.NORMAL)
         self.status_var.set("Disconnected")
         self.root.title("Secure Chat Client")
         self.users_listbox.delete(0, tk.END)
