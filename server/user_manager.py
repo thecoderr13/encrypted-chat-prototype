@@ -1,7 +1,9 @@
 # user_manager.py
 
 import threading
+import json
 from cryptography.fernet import Fernet
+from shared.protocol import Protocol
 
 class UserManager:
     def __init__(self):
@@ -56,8 +58,15 @@ class UserManager:
                     continue
                     
                 try:
-                    user_info['socket'].sendall((message + '\n').encode())
-                except:
+                    # Ensure message ends with newline
+                    if not message.endswith('\n'):
+                        message_to_send = message + '\n'
+                    else:
+                        message_to_send = message
+                    user_info['socket'].sendall(message_to_send.encode())
+                    print(f"Broadcasted to {username}")
+                except Exception as e:
+                    print(f"Failed to send to {username}: {e}")
                     disconnected_users.append(username)
                     
             # Remove disconnected users
@@ -71,21 +80,20 @@ class UserManager:
         user_info = self.get_user(username)
         if user_info:
             try:
-                user_info['socket'].sendall((message + '\n').encode())
+                if not message.endswith('\n'):
+                    message += '\n'
+                user_info['socket'].sendall(message.encode())
                 return True
-            except:
+            except Exception as e:
+                print(f"Failed to send to {username}: {e}")
                 self.remove_user(username)
         return False
         
-    def initiate_key_exchange(self):
-        """Initiate key exchange between all users"""
-        symmetric_key = Fernet.generate_key()
-        
-        with self.lock:
-            for username, user_info in self.users.items():
-                if user_info['public_key']:
-                    # In a real implementation, we'd encrypt the symmetric key
-                    # with each user's public key and send it to them
-                    self.set_symmetric_key(username, symmetric_key)
-                    
-        return symmetric_key
+    def broadcast_user_list(self):
+        """Broadcast updated user list to all users"""
+        user_list = self.get_all_users()
+        user_list_msg = json.dumps({
+            "type": "user_list",
+            "users": user_list
+        })
+        self.broadcast(user_list_msg)

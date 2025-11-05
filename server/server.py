@@ -15,9 +15,6 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from shared import protocol
-
-
 from user_manager import UserManager
 from shared.protocol import Protocol
 
@@ -28,8 +25,9 @@ class ChatServer:
         self.socket = None
         self.running = False
         self.user_manager = UserManager()
+        # Generate a global symmetric key for the chat room
         self.symmetric_key = Fernet.generate_key()
-        self.fernet = Fernet(self.symmetric_key)
+        print(f"Server symmetric key generated: {self.symmetric_key[:20]}...")
         
     def start(self):
         """Start the chat server"""
@@ -49,10 +47,9 @@ class ChatServer:
                     client_socket, address = self.socket.accept()
                     print(f"New connection from {address}")
                     
-                    # Handle client in separate thread
                     client_thread = threading.Thread(
                         target=self.handle_client,
-                        args=(client_socket,),
+                        args=(client_socket, address),
                         daemon=True
                     )
                     client_thread.start()
@@ -74,36 +71,35 @@ class ChatServer:
             self.socket.close()
         print("Server stopped")
         
-    def handle_client(self, client_socket):
+    def handle_client(self, client_socket, address):
         """Handle individual client connection"""
         buffer = ""
         username = None
         
         try:
             while self.running:
-                data = client_socket.recv(1024).decode()
+                data = client_socket.recv(1024).decode('utf-8', errors='ignore')
                 if not data:
                     break
                     
                 buffer += data
                 while '\n' in buffer:
                     line, buffer = buffer.split('\n', 1)
-                    response, username = self.process_client_message(line, client_socket, username)
-                    if response:
-                        client_socket.sendall((response + '\n').encode())
+                    if line.strip():  # Ignore empty lines
+                        username = self.process_client_message(line, client_socket, username)
                         
         except Exception as e:
-            print(f"Client handling error: {e}")
+            print(f"Client handling error from {address}: {e}")
         finally:
             if username:
                 self.user_manager.remove_user(username)
-                # Notify other users
-                user_list = self.user_manager.get_all_users()
-                broadcast_msg = json.dumps(Protocol.create_user_list(user_list))
-                self.user_manager.broadcast(broadcast_msg)
-                self.user_manager.broadcast(
-                    json.dumps(Protocol.create_system_message(f"{username} has left the chat"))
-                )
+                # Notify all users
+                self.user_manager.broadcast_user_list()
+                leave_msg = json.dumps({
+                    "type": "system",
+                    "message": f"{username} has left the chat"
+                })
+                self.user_manager.broadcast(leave_msg)
                 print(f"User {username} disconnected")
                 
             client_socket.close()
@@ -114,16 +110,15 @@ class ChatServer:
             data = json.loads(message_data)
             msg_type = data.get("type")
             
-            if msg_type == "handshake":
-                return self.handle_handshake(data, client_socket), data["username"]
-                
+            if msg_type == "handshake" and not current_username:
+                return self.handle_handshake(data, client_socket)
             elif msg_type == "message" and current_username:
-                return self.handle_chat_message(data, current_username), current_username
+                self.handle_chat_message(data, current_username)
                 
-        except json.JSONDecodeError:
-            print(f"Invalid JSON from client: {message_data}")
+        except json.JSONDecodeError as e:
+            print(f"Invalid JSON from client: {e}")
             
-        return None, current_username
+        return current_username
         
     def handle_handshake(self, data, client_socket):
         """Handle client handshake and registration"""
@@ -134,6 +129,13 @@ class ChatServer:
         if self.user_manager.add_user(username, client_socket, public_key_pem):
             print(f"User {username} registered successfully")
             
+            # Send welcome message first
+            welcome_msg = json.dumps({
+                "type": "system", 
+                "message": "Welcome to the secure chat! Establishing secure connection..."
+            })
+            client_socket.sendall((welcome_msg + '\n').encode())
+            
             # Encrypt symmetric key with user's public key
             try:
                 public_key = serialization.load_pem_public_key(
@@ -141,6 +143,7 @@ class ChatServer:
                     backend=default_backend()
                 )
                 
+                print(f"Encrypting symmetric key for {username}")
                 encrypted_key = public_key.encrypt(
                     self.symmetric_key,
                     padding.OAEP(
@@ -151,57 +154,76 @@ class ChatServer:
                 )
                 
                 encrypted_key_b64 = base64.b64encode(encrypted_key).decode()
+                print(f"Encrypted key length: {len(encrypted_key_b64)}")
                 
                 # Send key exchange message
-                key_exchange_msg = json.dumps(
-                    Protocol.create_key_exchange(encrypted_key_b64)
-                )
+                key_exchange_msg = json.dumps({
+                    "type": "key_exchange",
+                    "encrypted_key": encrypted_key_b64
+                })
                 client_socket.sendall((key_exchange_msg + '\n').encode())
+                print(f"Key exchange sent to {username}")
+                
+                # Send connection established message
+                secure_msg = json.dumps({
+                    "type": "system",
+                    "message": "Secure connection established! You can now send encrypted messages."
+                })
+                client_socket.sendall((secure_msg + '\n').encode())
                 
             except Exception as e:
                 print(f"Key encryption error for {username}: {e}")
-                return json.dumps(
-                    Protocol.create_system_message("Error establishing secure connection")
-                )
+                import traceback
+                traceback.print_exc()
+                error_msg = json.dumps({
+                    "type": "system",
+                    "message": "Error establishing secure connection"
+                })
+                client_socket.sendall((error_msg + '\n').encode())
+                return username
             
-            # Notify all users
-            user_list = self.user_manager.get_all_users()
-            user_list_msg = json.dumps(Protocol.create_user_list(user_list))
-            self.user_manager.broadcast(user_list_msg)
+            # Update all users with new user list
+            self.user_manager.broadcast_user_list()
             
-            # Broadcast join message
-            join_msg = json.dumps(
-                Protocol.create_system_message(f"{username} has joined the chat")
-            )
+            # Broadcast join message to all OTHER users
+            join_msg = json.dumps({
+                "type": "system", 
+                "message": f"{username} has joined the chat"
+            })
             self.user_manager.broadcast(join_msg, exclude_user=username)
             
-            return json.dumps(
-                Protocol.create_system_message("Welcome to the secure chat!")
-            )
+            return username
         else:
-            return json.dumps(
-                Protocol.create_system_message("Username already taken")
-            )
+            error_msg = json.dumps({
+                "type": "system",
+                "message": "Username already taken"
+            })
+            client_socket.sendall((error_msg + '\n').encode())
+            return None
             
     def handle_chat_message(self, data, username):
         """Handle incoming chat message"""
         message = data["message"]
         encrypted = data.get("encrypted", False)
         
-        # Broadcast message to all users
-        chat_msg = json.dumps(
-            Protocol.create_message(username, message, encrypted)
-        )
+        print(f"Received message from {username}: {message[:50]}... (encrypted: {encrypted})")
+        
+        # Broadcast message to all OTHER users
+        chat_msg = json.dumps({
+            "type": "message",
+            "sender": username,
+            "message": message,
+            "encrypted": encrypted
+        })
+        
         disconnected = self.user_manager.broadcast(chat_msg, exclude_user=username)
+        
+        # Also send the message back to the sender so they can see their own message
+        self.user_manager.send_to_user(username, chat_msg)
         
         # Update user list if any users disconnected
         if disconnected:
-            user_list_msg = json.dumps(
-                Protocol.create_user_list(self.user_manager.get_all_users())
-            )
-            self.user_manager.broadcast(user_list_msg)
-            
-        return None
+            self.user_manager.broadcast_user_list()
 
 def main():
     server = ChatServer()
