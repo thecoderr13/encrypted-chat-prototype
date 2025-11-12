@@ -38,16 +38,16 @@ encrypted_chat/
 └── requirements.txt        # Python dependencies
 ```
 
-# Installation
+## Installation
 
-## Prerequisites
+### Prerequisites
 
 - Python **3.7 or higher**
 - **pip** (Python package manager)
 
 ---
 
-## Step 1: Create Project Structure
+### Step 1: Create Project Structure
 
 ```bash
 # Create project directory
@@ -58,23 +58,23 @@ cd encrypted_chat
 mkdir client server shared
 ```
 
-## Step 2: Install Dependencies
+### Step 2: Install Dependencies
 ```bash
 pip install cryptography
 ```
 
-# Usage
+## Usage
 
-## Starting the Server
-## Step 1: Navigate to server directory:
+### Starting the Server
+### Step 1: Navigate to server directory:
 ```bash
 cd server
 ```
-## Step 2: Run the server:
+### Step 2: Run the server:
 ```bash
 python server.py
 ```
-## Step 3: Server will display:
+### Step 3: Server will display:
 
 ```text
 Chat Server Started
@@ -82,35 +82,35 @@ Server Address: localhost:8888
 Server Password: secret123
 Waiting for connections...
 ```
-## Connecting Clients
-## Step 1: Navigate to client directory:
+### Connecting Clients
+### Step 1: Navigate to client directory:
 ```bash
 cd client
 ```
-## Step 2: Run the client:
+### Step 2: Run the client:
 ```bash
 python client.py
 ```
-## Step 3: In the GUI:
+### Step 3: In the GUI:
 - Enter your username
 - Server: localhost
 - Port: 8888
 - Password: secret123 (default server password)
 - Click Connect
 
-# Configuration
-## Changing Server Password
+## Configuration
+### Changing Server Password
 Edit server.py and modify this line:
 ```python
 self.server_password = "your-new-password-here"
 ```
-## Changing Server Port
+### Changing Server Port
 Edit server.py and modify the constructor:
 ```python
 def __init__(self, host='localhost', port=9999):  # Change port number
 ```
-# Security Implementation
-## Encryption Flow
+## Security Implementation
+### Encryption Flow
 1. Key Generation
 - Client generates RSA-2048 key pair on connection
 - Server generates Fernet symmetric key for session
@@ -125,15 +125,15 @@ def __init__(self, host='localhost', port=9999):  # Change port number
 - Each message individually encrypted
 - Encryption status displayed in chat
 
-## Protocol Messages
+### Protocol Messages
 - handshake: Initial connection with credentials and public key
 - key_exchange: Secure symmetric key delivery
 - message: Encrypted/decrypted chat messages
 - user_list: Online users update
 - system: Server notifications
 
-# Troubleshooting
-## Common Issues
+## Troubleshooting
+### Common Issues
 1. Connection Refused
 - Ensure server is running before clients connect
 - Check firewall settings for port 8888
@@ -150,5 +150,5 @@ def __init__(self, host='localhost', port=9999):  # Change port number
 - Change server port in server.py
 - Update client connection settings accordingly
 
-# Contributing
+## Contributing
 Contributions are welcome! Please feel free to submit pull requests or open issues for bugs and feature requests.
