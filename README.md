@@ -153,4 +153,7 @@ def __init__(self, host='localhost', port=9999):  # Change port number
 ## Contributing
 Contributions are welcome! Please feel free to submit pull requests or open issues for bugs and feature requests.
 
-[View Project Report (PDF)](Secure Encrypted Chat Prototype - Technical Report (3).pdf)
+## Technical Report
+You can read the full project documentation here:
+[**Secure Encrypted Chat Prototype – Technical Report (PDF)**](./Secure%20Encrypted%20Chat%20Prototype%20-%20Technical%20Report%20(3).pdf)
+
